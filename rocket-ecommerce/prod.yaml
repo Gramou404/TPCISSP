@@ -1,15 +1,27 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: dev
+  name: prod
   labels:
-    environment: dev
+    environment: prod
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-rocket-svc
+  namespace: prod
+spec:
+  defaultBackend:
+    service:
+      name: rocket-svc
+      port:
+        number: 443
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rocketapp-deployment
-  namespace: dev
+  namespace: prod
   labels:
     app: rocket-svc
 spec:
@@ -25,11 +37,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rocketapp-deployment
-  namespace: dev
+  namespace: prod
   labels:
     app: rocketapp-deployment
 spec:
-  replicas: 5
+  replicas: 3
   selector:
     matchLabels:
       app: rocket-app
@@ -50,7 +62,7 @@ spec:
       containers:
       - name: rocket-app
         imagePullPolicy: IfNotPresent
-        image: rocketapp
+        image: gramouu/tpcissp:latest
         ports:
           - containerPort: 5005
         resources:
@@ -60,3 +72,56 @@ spec:
           limits:
             memory: 250Mi
             cpu: 400m
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hpa-rocketapp
+  namespace: prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rocketapp-deployment
+  minReplicas: 3
+  maxReplicas: 50
+  behavior:
+    scaleUp:
+      # scale up immediat 
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 5
+      - type: Pods
+        value: 4
+        periodSeconds: 5
+      selectPolicy: Max
+    scaleDown:
+      # 300 par defaut, donc 5 min avant scale down
+      stabilizationWindowSeconds: 10
+      policies:
+      # type : Pods ou Percent
+      - type: Percent
+        # enleve 50% des pods
+        value: 50
+        # Toutes les 5s. Période max 30min (1800s)
+        periodSeconds: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+status:
+  observedGeneration: 3
+  currentReplicas: 3
+  desiredReplicas: 3
+  currentMetrics:
+  - type: Resource
+    resource:
+      name: cpu
+      current:
+        averageUtilization: 0
+        averageValue: 0
